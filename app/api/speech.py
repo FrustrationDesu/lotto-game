@@ -36,35 +36,47 @@ def _resolve_transcribe_audio():
         return default_transcribe_audio
 
 
-@router.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)) -> dict[str, str | float | None]:
-    if file.content_type not in SUPPORTED_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported MIME type: {file.content_type}",
-        )
+def _transcribe_missing_dependency_response() -> None:
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail='Transcribe endpoint requires optional dependency "python-multipart"',
+    )
 
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty audio payload")
 
-    try:
-        result = _resolve_transcribe_audio()(
-            filename=file.filename or "audio",
-            content_type=file.content_type,
-            data=data,
-        )
-    except TranscriptionProviderError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-    except TranscriptionConfigError as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+try:
+    @router.post("/transcribe")
+    async def transcribe(file: UploadFile = File(...)) -> dict[str, str | float | None]:
+        if file.content_type not in SUPPORTED_MIME_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported MIME type: {file.content_type}",
+            )
 
-    return {
-        "text": result.text,
-        "language": result.language,
-        "duration_seconds": result.duration_seconds,
-        "provider": result.provider,
-    }
+        data = await file.read()
+        if not data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty audio payload")
+
+        try:
+            result = _resolve_transcribe_audio()(
+                filename=file.filename or "audio",
+                content_type=file.content_type,
+                data=data,
+            )
+        except TranscriptionProviderError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        except TranscriptionConfigError as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+        return {
+            "text": result.text,
+            "language": result.language,
+            "duration_seconds": result.duration_seconds,
+            "provider": result.provider,
+        }
+except RuntimeError:
+    @router.post("/transcribe")
+    async def transcribe() -> dict[str, str | float | None]:
+        _transcribe_missing_dependency_response()
 
 
 @router.post("/interpret", response_model=SpeechInterpretResponse)
