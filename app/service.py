@@ -88,17 +88,9 @@ class LottoService:
     def get_stats(self) -> dict[str, object]:
         games_count = self.repo.get_games_count()
         global_balance = self.repo.get_global_balance()
-        total_balance = sum(global_balance.values())
         return {
             "games_finished": games_count,
             "global_balance": global_balance,
-            "games_count": games_count,
-            "total_balance": total_balance,
-            "average_per_game": (total_balance / games_count) if games_count else 0.0,
-            "players": [
-                {"name": name, "net": net}
-                for name, net in sorted(global_balance.items())
-            ],
         }
 
     def get_player_stats(self, name: str) -> dict[str, object]:

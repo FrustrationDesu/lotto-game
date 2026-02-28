@@ -32,13 +32,7 @@ def stats_balance(
     ).all()
 
     players = {row.player_name: float(row.net) for row in per_player}
-    average = balance.total_net / balance.games_count if balance.games_count else 0.0
     return {
-        "total_balance": balance.total_net,
-        "games_count": balance.games_count,
-        "average_per_game": average,
-        "players": [{"name": name, "net": net} for name, net in players.items()],
-        # backward compatibility for old contract
         "games_finished": balance.games_count,
         "global_balance": players,
     }
