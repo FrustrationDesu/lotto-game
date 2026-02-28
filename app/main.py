@@ -10,11 +10,9 @@ from pydantic import BaseModel, Field
 
 from app.api.speech import router as speech_router
 from app.domain import DomainValidationError, GameEvent, GameEventType, GameSettings, build_transfers, calculate_net
-from app.storage.database import Base, engine, SessionLocal
-from app.storage.repository import LottoRepository
-from app.services.command_parser import CommandParser, EventType, ParseStatus
-from app.services.transcription_service import transcribe_audio
+from app.repository import LottoRepository
 from app.service import LottoService
+from app.services.command_parser import CommandParser, EventType, ParseStatus
 
 
 class StartGameRequest(BaseModel):
@@ -37,8 +35,12 @@ class SessionWinnersRequest(BaseModel):
     players: list[str] = Field(min_length=1)
 
 
-Base.metadata.create_all(bind=engine)
-repo = LottoRepository(SessionLocal)
+class SpeechInterpretRequest(BaseModel):
+    text: str
+    players: list[str] = Field(default_factory=list)
+
+
+repo = LottoRepository()
 service = LottoService(repo)
 command_parser = CommandParser()
 app = FastAPI(title="Lotto Game API")
@@ -231,11 +233,35 @@ def stats() -> dict[str, object]:
     return service.get_stats()
 
 
+@app.post("/speech/interpret")
+def speech_interpret(payload: SpeechInterpretRequest) -> dict[str, object]:
+    parsed = command_parser.parse(payload.text, payload.players)
 
+    endpoint_map = {
+        EventType.CLOSE_LINE: "/games/{game_id}/events/line",
+        EventType.CLOSE_CARD: "/games/{game_id}/events/card",
+    }
 
-@app.get("/stats/player/{name}")
-def player_stats(name: str) -> dict[str, object]:
-    return service.get_player_stats(name)
+    if parsed.status is ParseStatus.OK:
+        return {
+            "raw_text": parsed.raw_text,
+            "normalized_text": parsed.normalized_text,
+            "intent": "close_line" if parsed.event_type is EventType.CLOSE_LINE else "close_card",
+            "confidence": parsed.confidence,
+            "player_id": parsed.player_name,
+            "event_endpoint": endpoint_map.get(parsed.event_type),
+            "errors": [],
+        }
+
+    return {
+        "raw_text": parsed.raw_text,
+        "normalized_text": parsed.normalized_text,
+        "intent": "unknown",
+        "confidence": None,
+        "player_id": None,
+        "event_endpoint": None,
+        "errors": [parsed.error] if parsed.error else [parsed.status.value],
+    }
 
 
 @app.post("/sessions")
