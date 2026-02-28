@@ -4,8 +4,10 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from app.api.speech_schemas import SpeechInterpretRequest, SpeechInterpretResponse
 from app.domain import DomainValidationError, GameEvent, GameEventType
 from app.repository import LottoRepository
+from app.services.command_parser import CommandParser, EventType, ParseStatus
 from app.service import LottoService
 
 
@@ -27,6 +29,7 @@ class SpeechTranscribeResponse(BaseModel):
 
 repo = LottoRepository()
 service = LottoService(repo)
+command_parser = CommandParser()
 app = FastAPI(title="Lotto Game API")
 
 app.add_middleware(
