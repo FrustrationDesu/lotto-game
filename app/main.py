@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 
 from app.domain import DomainValidationError, GameEvent, GameEventType, GameSettings, build_transfers, calculate_net
 from app.repository import LottoRepository
-from app.services.command_parser import CommandParser, EventType, ParseStatus
 from app.service import LottoService
+from app.services.command_parser import CommandParser, EventType, ParseStatus
 
 
 class StartGameRequest(BaseModel):
@@ -32,6 +32,11 @@ class SessionCreateRequest(BaseModel):
 
 class SessionWinnersRequest(BaseModel):
     players: list[str] = Field(min_length=1)
+
+
+class SpeechInterpretRequest(BaseModel):
+    text: str
+    players: list[str] = Field(default_factory=list)
 
 
 repo = LottoRepository()
@@ -225,6 +230,37 @@ def settlement(game_id: int) -> dict[str, object]:
 @app.get("/stats/balance")
 def stats() -> dict[str, object]:
     return service.get_stats()
+
+
+@app.post("/speech/interpret")
+def speech_interpret(payload: SpeechInterpretRequest) -> dict[str, object]:
+    parsed = command_parser.parse(payload.text, payload.players)
+
+    endpoint_map = {
+        EventType.CLOSE_LINE: "/games/{game_id}/events/line",
+        EventType.CLOSE_CARD: "/games/{game_id}/events/card",
+    }
+
+    if parsed.status is ParseStatus.OK:
+        return {
+            "raw_text": parsed.raw_text,
+            "normalized_text": parsed.normalized_text,
+            "intent": "close_line" if parsed.event_type is EventType.CLOSE_LINE else "close_card",
+            "confidence": parsed.confidence,
+            "player_id": parsed.player_name,
+            "event_endpoint": endpoint_map.get(parsed.event_type),
+            "errors": [],
+        }
+
+    return {
+        "raw_text": parsed.raw_text,
+        "normalized_text": parsed.normalized_text,
+        "intent": "unknown",
+        "confidence": None,
+        "player_id": None,
+        "event_endpoint": None,
+        "errors": [parsed.error] if parsed.error else [parsed.status.value],
+    }
 
 
 @app.post("/sessions")
