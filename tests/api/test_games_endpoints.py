@@ -61,3 +61,44 @@ def test_game_domain_error_shape(client: TestClient) -> None:
     error_json = duplicate_line.json()
     assert set(error_json.keys()) == {"detail"}
     assert isinstance(error_json["detail"], str)
+
+
+def test_session_contract_includes_ruble_mirrors(client: TestClient) -> None:
+    create = client.post(
+        "/sessions",
+        json={
+            "players": ["alice", "bob", "charlie"],
+            "card_price_kopecks": 1000,
+            "line_bonus_kopecks": 500,
+        },
+    )
+    assert create.status_code == 200
+    create_json = create.json()
+    assert create_json["card_price_rub"] == 10.0
+    assert create_json["line_bonus_rub"] == 5.0
+
+    session_id = create_json["session_id"]
+    client.post(f"/sessions/{session_id}/line", json={"players": ["alice"]})
+    client.post(f"/sessions/{session_id}/card", json={"players": ["bob"]})
+
+    finish = client.post(f"/sessions/{session_id}/finish")
+    assert finish.status_code == 200
+    finish_json = finish.json()
+    assert set(finish_json.keys()) == {
+        "game_number",
+        "line_winners",
+        "card_winners",
+        "net",
+        "transfers",
+        "net_rub",
+        "transfers_rub",
+        "finished_at",
+    }
+
+    session = client.get(f"/sessions/{session_id}")
+    assert session.status_code == 200
+    session_json = session.json()
+    assert session_json["card_price_rub"] == 10.0
+    assert session_json["line_bonus_rub"] == 5.0
+    assert "net_rub" in session_json["history"][0]
+    assert "transfers_rub" in session_json["history"][0]
