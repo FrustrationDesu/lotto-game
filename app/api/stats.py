@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
+from app.api.errors import api_error
 from app.services.stats_service import get_global_balance
 from app.storage.database import get_db
 from app.storage.models import Game, GameResult
@@ -17,7 +18,10 @@ def stats_balance(
     player: str | None = None,
     db: Session = Depends(get_db),
 ) -> dict:
-    balance = get_global_balance(db, period_days=period_days, player_name=player)
+    try:
+        balance = get_global_balance(db, period_days=period_days, player_name=player)
+    except RuntimeError as exc:
+        raise api_error(code="stats_unavailable", message=str(exc), status_code=503) from exc
 
     per_player = db.execute(
         select(GameResult.player_name, func.coalesce(func.sum(GameResult.net), 0.0).label("net"))
@@ -27,12 +31,16 @@ def stats_balance(
         .order_by(GameResult.player_name)
     ).all()
 
+    players = {row.player_name: float(row.net) for row in per_player}
     average = balance.total_net / balance.games_count if balance.games_count else 0.0
     return {
         "total_balance": balance.total_net,
         "games_count": balance.games_count,
         "average_per_game": average,
-        "players": [{"name": row.player_name, "net": float(row.net)} for row in per_player],
+        "players": [{"name": name, "net": net} for name, net in players.items()],
+        # backward compatibility for old contract
+        "games_finished": balance.games_count,
+        "global_balance": players,
     }
 
 
