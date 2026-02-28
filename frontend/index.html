@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Speech Transcribe Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Распознавание речи</h1>
+      <p class="hint">Запишите аудио и отправьте его на <code>/speech/transcribe</code>.</p>
+
+      <div class="controls">
+        <button id="startBtn" type="button">Начать запись</button>
+        <button id="stopBtn" type="button" disabled>Остановить запись</button>
+      </div>
+
+      <section class="status-card">
+        <h2>Состояние</h2>
+        <p id="status">idle</p>
+      </section>
+
+      <section class="result-card">
+        <h2>Результат</h2>
+        <p><strong>Текст:</strong> <span id="text">—</span></p>
+        <p><strong>Язык:</strong> <span id="language">—</span></p>
+        <p><strong>Провайдер:</strong> <span id="provider">—</span></p>
+        <p id="error" class="error"></p>
+      </section>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

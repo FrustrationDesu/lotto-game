@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import os
-
-from fastapi import FastAPI, HTTPException
-from fastapi import File, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.api.speech_schemas import SpeechInterpretRequest, SpeechInterpretResponse
@@ -23,13 +21,24 @@ class EventRequest(BaseModel):
     players: list[str] = Field(min_length=1)
 
 
+class SpeechTranscribeResponse(BaseModel):
+    text: str
+    language: str
+    provider: str
+
+
 repo = LottoRepository()
 service = LottoService(repo)
 command_parser = CommandParser()
 app = FastAPI(title="Lotto Game API")
 
-ALLOWED_AUDIO_TYPES = {"audio/webm", "audio/wav", "audio/mpeg"}
-MAX_AUDIO_FILE_SIZE_BYTES = int(os.getenv("MAX_AUDIO_FILE_SIZE_BYTES", str(10 * 1024 * 1024)))
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.post("/games")
@@ -82,33 +91,17 @@ def stats() -> dict[str, object]:
     return service.get_stats()
 
 
-@app.post("/speech/interpret", response_model=SpeechInterpretResponse)
-def interpret_speech_command(payload: SpeechInterpretRequest) -> SpeechInterpretResponse:
-    result = command_parser.parse_whisper_output(payload.text, payload.players)
+@app.post("/speech/transcribe", response_model=SpeechTranscribeResponse)
+async def speech_transcribe(file: UploadFile = File(...)) -> SpeechTranscribeResponse:
+    if file.content_type not in {"audio/webm", "audio/webm;codecs=opus", "application/octet-stream"}:
+        raise HTTPException(status_code=400, detail="Unsupported audio format")
 
-    intent_map = {
-        EventType.CLOSE_LINE: "close_line",
-        EventType.CLOSE_CARD: "close_card",
-    }
-    endpoint_map = {
-        EventType.CLOSE_LINE: "/games/{game_id}/events/line",
-        EventType.CLOSE_CARD: "/games/{game_id}/events/card",
-    }
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio payload")
 
-    errors: list[str] = []
-    if result.status is not ParseStatus.OK:
-        if result.error:
-            errors.append(result.error)
-        if result.candidates:
-            options = ", ".join(candidate["player_name"] for candidate in result.candidates)
-            errors.append(f"Возможные игроки: {options}")
-
-    return SpeechInterpretResponse(
-        raw_text=result.raw_text or payload.text,
-        normalized_text=result.normalized_text or "",
-        intent=intent_map.get(result.event_type, "unknown"),
-        confidence=result.confidence,
-        player_id=result.player_name,
-        event_endpoint=endpoint_map.get(result.event_type),
-        errors=errors,
+    return SpeechTranscribeResponse(
+        text="Тестовая расшифровка получена",
+        language="ru",
+        provider="mock-media-recorder",
     )

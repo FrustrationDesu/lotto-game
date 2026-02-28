@@ -44,7 +44,7 @@ API будет доступно на `http://127.0.0.1:8000`, Swagger — `/docs
 - `POST /games/{id}/finish` — завершить игру и зафиксировать результат
 - `GET /games/{id}/settlement` — получить расчет завершенной игры
 - `GET /stats/balance` — общий баланс по всем завершенным играм
-- `POST /speech/transcribe` — распознавание речи из аудиофайла (`multipart/form-data`, поле `file`)
+- `POST /speech/transcribe` — принять аудио (`multipart/form-data`) и вернуть JSON с `text`, `language`, `provider`
 
 ## Пример сценария
 
@@ -60,41 +60,7 @@ API будет доступно на `http://127.0.0.1:8000`, Swagger — `/docs
 pytest
 ```
 
+## Frontend
 
-## Speech-to-Text
+В репозитории добавлен `frontend/` с демо-записью аудио через `MediaRecorder` и отправкой данных в `POST /speech/transcribe`.
 
-Новый endpoint: `POST /speech/transcribe`.
-
-Поддерживаемые MIME-типы:
-- `audio/webm`
-- `audio/wav`
-- `audio/mpeg`
-
-Ограничение размера файла задается переменной `MAX_AUDIO_FILE_SIZE_BYTES` (по умолчанию 10 MB).
-
-Обязательные переменные окружения:
-- `TRANSCRIPTION_PROVIDER=openai`
-- `OPENAI_API_KEY=<your_api_key>`
-
-Опциональные переменные:
-- `OPENAI_BASE_URL` (по умолчанию `https://api.openai.com/v1`)
-- `OPENAI_WHISPER_MODEL` (по умолчанию `whisper-1`)
-
-Пример `curl`:
-
-```bash
-curl -X POST "http://127.0.0.1:8000/speech/transcribe" \
-  -H "accept: application/json" \
-  -F "file=@./sample.webm;type=audio/webm"
-```
-
-Пример ответа:
-
-```json
-{
-  "text": "Привет, это тест",
-  "language": "ru",
-  "duration_seconds": 3.42,
-  "provider": "openai"
-}
-```
