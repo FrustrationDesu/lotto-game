@@ -8,10 +8,22 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from app.api.games import router as games_router
 from app.api.speech import router as speech_router
-from app.api.stats import router as stats_router
-from app.domain import GameSettings, build_transfers, calculate_net
+from app.domain import DomainValidationError, GameEvent, GameEventType, GameSettings, build_transfers, calculate_net
+from app.repository import LottoRepository
+from app.services.command_parser import CommandParser, EventType, ParseStatus
+from app.services.transcription_service import transcribe_audio
+from app.service import LottoService
+
+
+class StartGameRequest(BaseModel):
+    players: list[str] = Field(min_length=2)
+    card_price_kopecks: int = Field(gt=0)
+    line_bonus_kopecks: int = Field(gt=0)
+
+
+class EventRequest(BaseModel):
+    players: list[str] = Field(min_length=1)
 
 
 class SessionCreateRequest(BaseModel):
@@ -25,8 +37,6 @@ class SessionWinnersRequest(BaseModel):
 
 
 app = FastAPI(title="Lotto Game API")
-app.include_router(games_router)
-app.include_router(stats_router)
 app.include_router(speech_router)
 
 session_counter = count(1)
