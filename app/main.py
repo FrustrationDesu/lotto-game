@@ -3,8 +3,10 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.speech_schemas import SpeechInterpretRequest, SpeechInterpretResponse
 from app.domain import DomainValidationError, GameEvent, GameEventType
 from app.repository import LottoRepository
+from app.services.command_parser import CommandParser, EventType, ParseStatus
 from app.service import LottoService
 
 
@@ -20,6 +22,7 @@ class EventRequest(BaseModel):
 
 repo = LottoRepository()
 service = LottoService(repo)
+command_parser = CommandParser()
 app = FastAPI(title="Lotto Game API")
 
 
@@ -71,3 +74,35 @@ def settlement(game_id: int) -> dict[str, object]:
 @app.get("/stats/balance")
 def stats() -> dict[str, object]:
     return service.get_stats()
+
+
+@app.post("/speech/interpret", response_model=SpeechInterpretResponse)
+def interpret_speech_command(payload: SpeechInterpretRequest) -> SpeechInterpretResponse:
+    result = command_parser.parse_whisper_output(payload.text, payload.players)
+
+    intent_map = {
+        EventType.CLOSE_LINE: "close_line",
+        EventType.CLOSE_CARD: "close_card",
+    }
+    endpoint_map = {
+        EventType.CLOSE_LINE: "/games/{game_id}/events/line",
+        EventType.CLOSE_CARD: "/games/{game_id}/events/card",
+    }
+
+    errors: list[str] = []
+    if result.status is not ParseStatus.OK:
+        if result.error:
+            errors.append(result.error)
+        if result.candidates:
+            options = ", ".join(candidate["player_name"] for candidate in result.candidates)
+            errors.append(f"Возможные игроки: {options}")
+
+    return SpeechInterpretResponse(
+        raw_text=result.raw_text or payload.text,
+        normalized_text=result.normalized_text or "",
+        intent=intent_map.get(result.event_type, "unknown"),
+        confidence=result.confidence,
+        player_id=result.player_name,
+        event_endpoint=endpoint_map.get(result.event_type),
+        errors=errors,
+    )
