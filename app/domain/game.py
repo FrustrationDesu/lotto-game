@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import Enum
-from typing import FrozenSet, Tuple
+from typing import FrozenSet, Iterable, Tuple
 
 
 class DomainValidationError(ValueError):
-    """Ошибка валидации доменной логики."""
+    """Raised when a game rule is violated."""
 
 
 @dataclass(frozen=True)
@@ -17,14 +17,14 @@ class GameSettings:
 
     def __post_init__(self) -> None:
         if self.card_price_kopecks <= 0:
-            raise DomainValidationError("Стоимость карточки должна быть положительной.")
-        if self.line_bonus_kopecks < 0:
-            raise DomainValidationError("Бонус за линию не может быть отрицательным.")
+            raise DomainValidationError("card_price_kopecks must be positive")
+        if self.line_bonus_kopecks <= 0:
+            raise DomainValidationError("line_bonus_kopecks must be positive")
 
 
 class GameEventType(str, Enum):
-    LINE_CLOSED = "LINE_CLOSED"
-    CARD_CLOSED = "CARD_CLOSED"
+    LINE_CLOSED = "line_closed"
+    CARD_CLOSED = "card_closed"
 
 
 @dataclass(frozen=True)
@@ -35,13 +35,11 @@ class GameEvent:
     sequence: int | None = None
 
     def __post_init__(self) -> None:
-        if not self.player_ids:
-            raise DomainValidationError("Событие должно содержать хотя бы одного игрока.")
-        normalized_ids = tuple(player_id.strip() for player_id in self.player_ids)
-        if any(not player_id for player_id in normalized_ids):
-            raise DomainValidationError("Идентификатор игрока не может быть пустым.")
+        normalized_ids = tuple(normalize_player(player_id) for player_id in self.player_ids)
+        if not normalized_ids:
+            raise DomainValidationError("event must have at least one player")
         if len(set(normalized_ids)) != len(normalized_ids):
-            raise DomainValidationError("В одном событии игрок не может дублироваться.")
+            raise DomainValidationError("players in event must be unique")
         object.__setattr__(self, "player_ids", normalized_ids)
 
 
@@ -54,18 +52,33 @@ class GameState:
     line_winners: FrozenSet[str] = field(default_factory=frozenset)
 
 
+def normalize_player(name: str) -> str:
+    value = name.strip()
+    if not value:
+        raise DomainValidationError("player name must be non-empty")
+    return value
+
+
+def unique_preserve_order(players: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for player in players:
+        normalized = normalize_player(player)
+        if normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+    return result
+
 
 def apply_event(state: GameState, event: GameEvent) -> GameState:
-    """Применяет доменное событие к состоянию партии без инфраструктурных зависимостей."""
+    """Apply a domain event to a game state without infrastructure dependencies."""
     _ensure_players_exist(state, event)
 
-    if event.event_type is GameEventType.LINE_CLOSED:
+    if event.event_type == GameEventType.LINE_CLOSED:
         repeated_line_closers = set(event.player_ids).intersection(state.line_winners)
         if repeated_line_closers:
             repeated = ", ".join(sorted(repeated_line_closers))
-            raise DomainValidationError(
-                f"Игрок(и) уже закрывали линию в этой партии: {repeated}."
-            )
+            raise DomainValidationError(f"line already closed by: {repeated}")
 
         return replace(
             state,
@@ -73,7 +86,7 @@ def apply_event(state: GameState, event: GameEvent) -> GameState:
             line_winners=state.line_winners.union(event.player_ids),
         )
 
-    if event.event_type is GameEventType.CARD_CLOSED:
+    if event.event_type == GameEventType.CARD_CLOSED:
         finished_at = state.finished_at or event.occurred_at or datetime.utcnow()
         return replace(
             state,
@@ -82,14 +95,11 @@ def apply_event(state: GameState, event: GameEvent) -> GameState:
             finished_at=finished_at,
         )
 
-    raise DomainValidationError(f"Неподдерживаемый тип события: {event.event_type}")
-
+    raise DomainValidationError(f"unsupported event type: {event.event_type}")
 
 
 def _ensure_players_exist(state: GameState, event: GameEvent) -> None:
     unknown_players = [player_id for player_id in event.player_ids if player_id not in state.players]
     if unknown_players:
         missing_players = ", ".join(sorted(unknown_players))
-        raise DomainValidationError(
-            f"В событии есть игроки, не участвующие в партии: {missing_players}."
-        )
+        raise DomainValidationError(f"unknown players in event: {missing_players}")
