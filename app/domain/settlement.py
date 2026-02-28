@@ -1,10 +1,12 @@
-"""Domain logic for player settlement in the lotto game."""
+"""Domain logic for settlements and transfer calculation in the lotto game."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_DOWN
+
+from .game import DomainValidationError, GameSettings, unique_preserve_order
 
 
 @dataclass
@@ -13,7 +15,7 @@ class SettlementResult:
 
 
 def settle(bank: Decimal, line_winners: Sequence[str], card_winners: Sequence[str]) -> SettlementResult:
-    winners = _deduplicate_preserve_order([*line_winners, *card_winners])
+    winners = unique_preserve_order([*line_winners, *card_winners])
     if not winners:
         return SettlementResult(payouts={})
 
@@ -32,6 +34,72 @@ def settle_game(bank: Decimal, line_winners: Sequence[str], card_winners: Sequen
     return settle(bank=bank, line_winners=line_winners, card_winners=card_winners)
 
 
+def calculate_net(
+    players: list[str],
+    settings: GameSettings,
+    line_winners: list[str],
+    card_winners: list[str],
+) -> dict[str, int]:
+    ordered_players = unique_preserve_order(players)
+    if len(ordered_players) < 2:
+        raise DomainValidationError("at least 2 players required")
+    if len(ordered_players) != len(players):
+        raise DomainValidationError("players must be unique")
+    if not card_winners:
+        raise DomainValidationError("at least one card winner required")
+
+    net = {player: -settings.card_price_kopecks for player in ordered_players}
+    total_players = len(ordered_players)
+
+    for winner in line_winners:
+        if winner not in net:
+            raise DomainValidationError(f"unknown line winner: {winner}")
+        for player in ordered_players:
+            if player != winner:
+                net[player] -= settings.line_bonus_kopecks
+        net[winner] += settings.line_bonus_kopecks * (total_players - 1)
+
+    ordered_winners = unique_preserve_order(card_winners)
+    if len(ordered_winners) != len(card_winners):
+        raise DomainValidationError("card winners must be unique")
+
+    pot = settings.card_price_kopecks * total_players
+    share, remainder = divmod(pot, len(ordered_winners))
+    for idx, winner in enumerate(ordered_winners):
+        if winner not in net:
+            raise DomainValidationError(f"unknown card winner: {winner}")
+        net[winner] += share + (1 if idx < remainder else 0)
+
+    return net
+
+
+def build_transfers(net: Mapping[str, int]) -> list[dict[str, int | str]]:
+    creditors = [(name, amount) for name, amount in net.items() if amount > 0]
+    debtors = [(name, -amount) for name, amount in net.items() if amount < 0]
+
+    transfers: list[dict[str, int | str]] = []
+    creditor_idx = 0
+    debtor_idx = 0
+    while creditor_idx < len(creditors) and debtor_idx < len(debtors):
+        creditor_name, creditor_amount = creditors[creditor_idx]
+        debtor_name, debtor_amount = debtors[debtor_idx]
+
+        amount = min(creditor_amount, debtor_amount)
+        transfers.append({"from": debtor_name, "to": creditor_name, "amount_kopecks": amount})
+
+        creditor_amount -= amount
+        debtor_amount -= amount
+        creditors[creditor_idx] = (creditor_name, creditor_amount)
+        debtors[debtor_idx] = (debtor_name, debtor_amount)
+
+        if creditor_amount == 0:
+            creditor_idx += 1
+        if debtor_amount == 0:
+            debtor_idx += 1
+
+    return transfers
+
+
 def calculate_settlement(
     players: Sequence[str],
     card_price: int,
@@ -39,102 +107,21 @@ def calculate_settlement(
     line_winner: str,
     card_winners: Sequence[str],
 ) -> dict:
-    if not players:
-        raise ValueError("players must not be empty")
-    if card_price < 0 or line_bonus < 0:
-        raise ValueError("card_price and line_bonus must be non-negative")
-    if line_winner not in players:
-        raise ValueError("line_winner must be one of players")
-    if not card_winners:
-        raise ValueError("card_winners must not be empty")
-
-    players_unique = _deduplicate_preserve_order(players)
-    if len(players_unique) != len(players):
-        raise ValueError("players must contain unique ids")
-
-    card_winners_unique = _deduplicate_preserve_order(card_winners)
-    card_winners_set = set(card_winners_unique)
-    unknown_winners = card_winners_set.difference(players_unique)
-    if unknown_winners:
-        raise ValueError("all card_winners must be in players")
-
-    player_count = len(players_unique)
-    pot = player_count * card_price
-
-    net_by_player = {player: -card_price for player in players_unique}
-
-    for player in players_unique:
-        if player != line_winner:
-            net_by_player[player] -= line_bonus
-    line_payouts_total = (player_count - 1) * line_bonus
-    net_by_player[line_winner] += line_payouts_total
-
-    share, remainder = divmod(pot, len(card_winners_unique))
-    for winner in card_winners_unique:
-        net_by_player[winner] += share
-
-    if remainder:
-        distributed = 0
-        for player in players_unique:
-            if player in card_winners_set:
-                net_by_player[player] += 1
-                distributed += 1
-                if distributed == remainder:
-                    break
-
-    transfers = calculate_transfers(net_by_player)
-
+    settings = GameSettings(card_price_kopecks=card_price, line_bonus_kopecks=line_bonus)
+    net_by_player = calculate_net(
+        players=list(players),
+        settings=settings,
+        line_winners=[line_winner],
+        card_winners=list(card_winners),
+    )
     return {
         "net_by_player": net_by_player,
-        "transfers": transfers,
-        "pot": pot,
-        "line_payouts_total": line_payouts_total,
+        "transfers": build_transfers(net_by_player),
+        "pot": len(players) * card_price,
+        "line_payouts_total": (len(players) - 1) * line_bonus,
     }
 
 
 def calculate_transfers(net_by_player: Mapping[str, int]) -> list[dict[str, int | str]]:
-    debtors = sorted(
-        ((player, -amount) for player, amount in net_by_player.items() if amount < 0),
-        key=lambda item: item[0],
-    )
-    creditors = sorted(
-        ((player, amount) for player, amount in net_by_player.items() if amount > 0),
-        key=lambda item: item[0],
-    )
-
-    transfers: list[dict[str, int | str]] = []
-    debtor_idx = 0
-    creditor_idx = 0
-
-    while debtor_idx < len(debtors) and creditor_idx < len(creditors):
-        debtor, debt_left = debtors[debtor_idx]
-        creditor, credit_left = creditors[creditor_idx]
-
-        amount = debt_left if debt_left <= credit_left else credit_left
-        transfers.append({"from": debtor, "to": creditor, "amount": amount})
-
-        debt_left -= amount
-        credit_left -= amount
-
-        debtors[debtor_idx] = (debtor, debt_left)
-        creditors[creditor_idx] = (creditor, credit_left)
-
-        if debt_left == 0:
-            debtor_idx += 1
-        if credit_left == 0:
-            creditor_idx += 1
-
-    if debtor_idx != len(debtors) or creditor_idx != len(creditors):
-        raise ValueError("invalid net state: debts and credits are imbalanced")
-
-    return transfers
-
-
-def _deduplicate_preserve_order(items: Sequence[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for item in items:
-        if item not in seen:
-            seen.add(item)
-            result.append(item)
-    return result
+    """Backward-compatible alias."""
+    return build_transfers(net_by_player)

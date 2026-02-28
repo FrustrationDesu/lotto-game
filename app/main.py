@@ -191,7 +191,7 @@ def start_game(payload: StartGameRequest) -> dict[str, int]:
 @app.post("/games/{game_id}/events/line")
 def add_line_event(game_id: int, payload: EventRequest) -> dict[str, str]:
     try:
-        service.add_event(game_id, GameEvent(type=GameEventType.LINE_CLOSED, players=tuple(payload.players)))
+        service.add_event(game_id, GameEvent(event_type=GameEventType.LINE_CLOSED, player_ids=tuple(payload.players)))
     except DomainValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -200,7 +200,7 @@ def add_line_event(game_id: int, payload: EventRequest) -> dict[str, str]:
 @app.post("/games/{game_id}/events/card")
 def add_card_event(game_id: int, payload: EventRequest) -> dict[str, str]:
     try:
-        service.add_event(game_id, GameEvent(type=GameEventType.CARD_CLOSED, players=tuple(payload.players)))
+        service.add_event(game_id, GameEvent(event_type=GameEventType.CARD_CLOSED, player_ids=tuple(payload.players)))
     except DomainValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}

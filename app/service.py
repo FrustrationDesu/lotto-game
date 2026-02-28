@@ -30,12 +30,12 @@ class LottoService:
         if game.finished_at is not None:
             raise DomainValidationError("game already finished")
 
-        winners = unique_preserve_order(event.players)
+        winners = unique_preserve_order(event.player_ids)
         for winner in winners:
             if winner not in game.players:
                 raise DomainValidationError(f"unknown player: {winner}")
 
-        if event.type == GameEventType.LINE_CLOSED:
+        if event.event_type == GameEventType.LINE_CLOSED:
             duplicates = set(winners) & set(game.line_winners)
             if duplicates:
                 raise DomainValidationError(
@@ -48,7 +48,7 @@ class LottoService:
                     f"card already closed by: {', '.join(sorted(duplicates))}"
                 )
 
-        self.repo.append_winners(game_id, event.type, winners)
+        self.repo.append_winners(game_id, event.event_type, winners)
 
     def finish_game(self, game_id: int) -> dict[str, object]:
         game = self.repo.get_game(game_id)
