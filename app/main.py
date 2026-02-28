@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.domain import DomainValidationError, GameEvent, GameEventType, GameSettings, build_transfers, calculate_net
 from app.repository import LottoRepository
+from app.services.command_parser import CommandParser, EventType, ParseStatus
 from app.service import LottoService
 
 
@@ -35,6 +36,7 @@ class SessionWinnersRequest(BaseModel):
 
 repo = LottoRepository()
 service = LottoService(repo)
+command_parser = CommandParser()
 app = FastAPI(title="Lotto Game API")
 
 session_counter = count(1)
