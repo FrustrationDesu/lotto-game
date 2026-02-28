@@ -8,9 +8,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from app.api.speech import router as speech_router
 from app.domain import DomainValidationError, GameEvent, GameEventType, GameSettings, build_transfers, calculate_net
 from app.repository import LottoRepository
 from app.services.command_parser import CommandParser, EventType, ParseStatus
+from app.services.transcription_service import transcribe_audio
 from app.service import LottoService
 
 
@@ -38,6 +40,7 @@ repo = LottoRepository()
 service = LottoService(repo)
 command_parser = CommandParser()
 app = FastAPI(title="Lotto Game API")
+app.include_router(speech_router)
 
 session_counter = count(1)
 game_counter = count(1)
