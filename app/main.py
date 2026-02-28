@@ -9,7 +9,8 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from app.domain import DomainValidationError, GameEvent, GameEventType, GameSettings, build_transfers, calculate_net
-from app.repository import LottoRepository
+from app.storage.database import Base, engine, SessionLocal
+from app.storage.repository import LottoRepository
 from app.services.command_parser import CommandParser, EventType, ParseStatus
 from app.service import LottoService
 
@@ -34,7 +35,8 @@ class SessionWinnersRequest(BaseModel):
     players: list[str] = Field(min_length=1)
 
 
-repo = LottoRepository()
+Base.metadata.create_all(bind=engine)
+repo = LottoRepository(SessionLocal)
 service = LottoService(repo)
 command_parser = CommandParser()
 app = FastAPI(title="Lotto Game API")
@@ -225,6 +227,13 @@ def settlement(game_id: int) -> dict[str, object]:
 @app.get("/stats/balance")
 def stats() -> dict[str, object]:
     return service.get_stats()
+
+
+
+
+@app.get("/stats/player/{name}")
+def player_stats(name: str) -> dict[str, object]:
+    return service.get_player_stats(name)
 
 
 @app.post("/sessions")
