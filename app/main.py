@@ -50,6 +50,46 @@ session_counter = count(1)
 SESSIONS: dict[int, dict[str, Any]] = {}
 
 
+def _kopecks_to_rubles(value: int) -> float:
+    return value / 100
+
+
+def _add_ruble_fields_to_transfers(transfers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            **transfer,
+            "amount_rub": _kopecks_to_rubles(transfer["amount_kopecks"]),
+        }
+        for transfer in transfers
+    ]
+
+
+def _add_ruble_fields_to_net(net: dict[str, int]) -> dict[str, float]:
+    return {player: _kopecks_to_rubles(amount) for player, amount in net.items()}
+
+
+def _session_public_view(session: dict[str, Any]) -> dict[str, Any]:
+    history_with_rubles = []
+    for game_result in session["history"]:
+        history_with_rubles.append(
+            {
+                **game_result,
+                "net_rub": game_result.get("net_rub", _add_ruble_fields_to_net(game_result["net"])),
+                "transfers_rub": game_result.get(
+                    "transfers_rub",
+                    _add_ruble_fields_to_transfers(game_result["transfers"]),
+                ),
+            }
+        )
+
+    return {
+        **session,
+        "card_price_rub": _kopecks_to_rubles(session["card_price_kopecks"]),
+        "line_bonus_rub": _kopecks_to_rubles(session["line_bonus_kopecks"]),
+        "history": history_with_rubles,
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def frontend() -> str:
     return """
@@ -74,8 +114,8 @@ def frontend() -> str:
     <h2>Создать сессию</h2>
     <form id="createSessionForm">
       <label>Игроки (через запятую): <input id="players" required value="Альберт,Паша,Лена" /></label><br/><br/>
-      <label>Цена карточки (коп): <input id="cardPrice" type="number" min="1" required value="1000" /></label><br/><br/>
-      <label>Бонус за линию (коп): <input id="lineBonus" type="number" min="1" required value="500" /></label><br/><br/>
+      <label>Цена карточки (₽): <input id="cardPrice" type="number" min="0.01" step="0.01" required value="10" /></label><br/><br/>
+      <label>Бонус за линию (₽): <input id="lineBonus" type="number" min="0.01" step="0.01" required value="5" /></label><br/><br/>
       <button type="submit">Создать сессию</button>
     </form>
     <p id="sessionInfo"></p>
@@ -118,8 +158,10 @@ async function refreshHistory() {
 document.getElementById("createSessionForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const players = document.getElementById("players").value.split(",").map(p => p.trim()).filter(Boolean);
-  const cardPrice = Number(document.getElementById("cardPrice").value);
-  const lineBonus = Number(document.getElementById("lineBonus").value);
+  const cardPriceRub = Number(document.getElementById("cardPrice").value);
+  const lineBonusRub = Number(document.getElementById("lineBonus").value);
+  const cardPrice = Math.round(cardPriceRub * 100);
+  const lineBonus = Math.round(lineBonusRub * 100);
 
   const res = await fetch("/sessions", {
     method: "POST",
@@ -284,7 +326,7 @@ def create_session(payload: SessionCreateRequest) -> dict[str, Any]:
         },
         "history": [],
     }
-    return SESSIONS[session_id]
+    return _session_public_view(SESSIONS[session_id])
 
 
 @app.post("/sessions/{session_id}/line")
@@ -320,12 +362,15 @@ def finish_session_game(session_id: int) -> dict[str, Any]:
         line_winners=game["line_winners"],
         card_winners=game["card_winners"],
     )
+    transfers = build_transfers(net)
     result = {
         "game_number": game["game_number"],
         "line_winners": game["line_winners"],
         "card_winners": game["card_winners"],
         "net": net,
-        "transfers": build_transfers(net),
+        "transfers": transfers,
+        "net_rub": _add_ruble_fields_to_net(net),
+        "transfers_rub": _add_ruble_fields_to_transfers(transfers),
         "finished_at": datetime.utcnow().isoformat(),
     }
     session["history"].append(result)
@@ -346,7 +391,7 @@ def new_game_in_session(session_id: int) -> dict[str, Any]:
 
 @app.get("/sessions/{session_id}")
 def get_session(session_id: int) -> dict[str, Any]:
-    return _session_or_404(session_id)
+    return _session_public_view(_session_or_404(session_id))
 
 
 def _session_or_404(session_id: int) -> dict[str, Any]:
