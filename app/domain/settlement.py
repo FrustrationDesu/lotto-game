@@ -3,6 +3,33 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from decimal import Decimal, ROUND_DOWN
+
+
+@dataclass
+class SettlementResult:
+    payouts: dict[str, Decimal]
+
+
+def settle(bank: Decimal, line_winners: Sequence[str], card_winners: Sequence[str]) -> SettlementResult:
+    winners = _deduplicate_preserve_order([*line_winners, *card_winners])
+    if not winners:
+        return SettlementResult(payouts={})
+
+    cents = int((bank * 100).to_integral_value(rounding=ROUND_DOWN))
+    share, remainder = divmod(cents, len(winners))
+
+    payouts: dict[str, Decimal] = {}
+    for idx, winner in enumerate(winners):
+        amount_cents = share + (1 if idx < remainder else 0)
+        payouts[winner] = (Decimal(amount_cents) / Decimal(100)).quantize(Decimal("0.01"))
+
+    return SettlementResult(payouts=payouts)
+
+
+def settle_game(bank: Decimal, line_winners: Sequence[str], card_winners: Sequence[str]) -> SettlementResult:
+    return settle(bank=bank, line_winners=line_winners, card_winners=card_winners)
 
 
 def calculate_settlement(
@@ -12,16 +39,6 @@ def calculate_settlement(
     line_winner: str,
     card_winners: Sequence[str],
 ) -> dict:
-    """Calculate net balances and transfer plan in kopecks.
-
-    Rules:
-    - Bank contribution: every player pays ``card_price``.
-    - Line bonus: every non-winner pays ``line_bonus``, line winner gets ``(N-1)*line_bonus``.
-    - Card payout: whole bank is split equally between card winners.
-      If the bank is not divisible, remainder kopecks are distributed deterministically
-      by the players order in ``players``.
-    """
-
     if not players:
         raise ValueError("players must not be empty")
     if card_price < 0 or line_bonus < 0:
@@ -76,11 +93,6 @@ def calculate_settlement(
 
 
 def calculate_transfers(net_by_player: Mapping[str, int]) -> list[dict[str, int | str]]:
-    """Convert net balances to transfers in deterministic order.
-
-    Negative net means player should pay, positive net means player should receive.
-    """
-
     debtors = sorted(
         ((player, -amount) for player, amount in net_by_player.items() if amount < 0),
         key=lambda item: item[0],
