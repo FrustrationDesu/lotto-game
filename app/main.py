@@ -64,7 +64,15 @@ def frontend() -> str:
     .hidden { display:none; }
     .winners label { margin-right: 1rem; display: inline-block; }
     button { padding: 0.4rem 0.8rem; }
-    pre { background: #f7f7f7; padding: 0.8rem; white-space: pre-wrap; }
+    .history-layout { display: grid; gap: 1rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ddd; padding: 0.45rem 0.6rem; vertical-align: top; }
+    th { background: #f7f7f7; text-align: left; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .money-positive { color: #0b7a0b; font-weight: 600; }
+    .money-negative { color: #b42318; font-weight: 600; }
+    .money-zero { color: #667085; }
+    .friendly-state { margin: 0; color: #667085; font-style: italic; }
   </style>
 </head>
 <body>
@@ -90,7 +98,9 @@ def frontend() -> str:
 
   <div class="card">
     <h2>История сессии</h2>
-    <pre id="history">Сессия еще не создана</pre>
+    <div id="history" class="history-layout">
+      <p class="friendly-state">Сессия еще не создана</p>
+    </div>
   </div>
 
 <script>
@@ -108,11 +118,106 @@ function renderWinners(players) {
   box.innerHTML = players.map(p => `<label><input type="checkbox" name="winner" value="${p}"> ${p}</label>`).join(" ");
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatRub(valueKopecks) {
+  const amountRub = Number(valueKopecks || 0) / 100;
+  return `${amountRub.toFixed(2)} ₽`;
+}
+
+function moneyClass(valueKopecks) {
+  if (valueKopecks > 0) return "money-positive";
+  if (valueKopecks < 0) return "money-negative";
+  return "money-zero";
+}
+
+function formatFinishedAt(isoValue) {
+  if (!isoValue) return "—";
+  const parsed = new Date(isoValue);
+  if (Number.isNaN(parsed.getTime())) return escapeHtml(isoValue);
+  return parsed.toLocaleString("ru-RU");
+}
+
 async function refreshHistory() {
   if (!currentSessionId) return;
   const res = await fetch(`/sessions/${currentSessionId}`);
   const data = await res.json();
-  document.getElementById("history").textContent = JSON.stringify(data, null, 2);
+  const historyRoot = document.getElementById("history");
+  const games = Array.isArray(data.history) ? data.history : [];
+  const playerBalances = Object.fromEntries((data.players || []).map((player) => [player, 0]));
+
+  for (const game of games) {
+    const net = game.net || {};
+    for (const [player, value] of Object.entries(net)) {
+      playerBalances[player] = (playerBalances[player] || 0) + Number(value || 0);
+    }
+  }
+
+  if (!games.length) {
+    historyRoot.innerHTML = '<p class="friendly-state">Пока нет завершенных игр</p>';
+    return;
+  }
+
+  const gameRows = games.map((game) => {
+    const netEntries = Object.entries(game.net || {})
+      .map(([player, value]) => `<div><strong>${escapeHtml(player)}</strong>: <span class="${moneyClass(value)}">${formatRub(value)}</span></div>`)
+      .join("");
+    return `
+      <tr>
+        <td class="num">${escapeHtml(game.game_number)}</td>
+        <td>${escapeHtml((game.line_winners || []).join(", ") || "—")}</td>
+        <td>${escapeHtml((game.card_winners || []).join(", ") || "—")}</td>
+        <td>${netEntries || "—"}</td>
+        <td>${escapeHtml(formatFinishedAt(game.finished_at))}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const balanceRows = Object.entries(playerBalances).map(([player, value]) => `
+      <tr>
+        <td>${escapeHtml(player)}</td>
+        <td class="num ${moneyClass(value)}">${formatRub(value)}</td>
+        <td class="num">${Number(value || 0)}</td>
+      </tr>
+    `).join("");
+
+  historyRoot.innerHTML = `
+    <section>
+      <h3>История игр</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>№ игры</th>
+            <th>Победители линии</th>
+            <th>Победители карты</th>
+            <th>Net (₽)</th>
+            <th>Завершена</th>
+          </tr>
+        </thead>
+        <tbody>${gameRows}</tbody>
+      </table>
+    </section>
+    <section>
+      <h3>Текущий баланс</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Игрок</th>
+            <th>Баланс (₽)</th>
+            <th>Баланс (коп)</th>
+          </tr>
+        </thead>
+        <tbody>${balanceRows}</tbody>
+      </table>
+    </section>
+  `;
 }
 
 document.getElementById("createSessionForm").addEventListener("submit", async (e) => {
