@@ -99,20 +99,131 @@ def frontend() -> str:
   <meta charset="UTF-8" />
   <title>Lotto Session</title>
   <style>
-    body { font-family: sans-serif; max-width: 860px; margin: 2rem auto; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    :root {
+      --bg-dark: #0a0f1a;
+      --bg-mid: #141a27;
+      --bg-soft: #2e3444;
+      --card-bg: rgba(10, 15, 26, 0.7);
+      --card-border: rgba(148, 163, 184, 0.25);
+      --text-main: #e5e7eb;
+      --text-soft: #9ca3af;
+      --accent: #60a5fa;
+      --accent-soft: rgba(96, 165, 250, 0.2);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      max-width: 940px;
+      margin: 0 auto;
+      min-height: 100vh;
+      padding: 2.5rem 1.25rem;
+      background:
+        radial-gradient(circle at 12% 10%, rgba(96, 165, 250, 0.22), transparent 34%),
+        radial-gradient(circle at 88% 90%, rgba(148, 163, 184, 0.16), transparent 32%),
+        linear-gradient(130deg, var(--bg-dark), var(--bg-mid) 52%, var(--bg-soft));
+      color: var(--text-main);
+    }
+
+    h1 {
+      margin-top: 0;
+      margin-bottom: 1.5rem;
+      font-weight: 650;
+      letter-spacing: 0.01em;
+    }
+
+    h2, h3 {
+      margin-top: 0;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    label {
+      color: var(--text-soft);
+    }
+
+    input {
+      margin-top: 0.35rem;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 0.55rem;
+      padding: 0.45rem 0.55rem;
+      background: rgba(15, 23, 42, 0.8);
+      color: var(--text-main);
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+
+    .card {
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 1.15rem;
+      margin-bottom: 1rem;
+      background: var(--card-bg);
+      backdrop-filter: blur(4px);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+
     .hidden { display:none; }
-    .winners label { margin-right: 1rem; display: inline-block; }
-    button { padding: 0.4rem 0.8rem; }
+    .winners label {
+      margin-right: 0.85rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: var(--text-main);
+      margin-bottom: 0.45rem;
+    }
+
+    button {
+      padding: 0.5rem 0.95rem;
+      border-radius: 0.65rem;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: linear-gradient(140deg, rgba(30, 41, 59, 0.95), rgba(51, 65, 85, 0.8));
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    button:hover {
+      border-color: rgba(96, 165, 250, 0.6);
+      transform: translateY(-1px);
+    }
+
     .history-layout { display: grid; gap: 1rem; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ddd; padding: 0.45rem 0.6rem; vertical-align: top; }
-    th { background: #f7f7f7; text-align: left; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    th, td {
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      padding: 0.5rem 0.65rem;
+      vertical-align: top;
+    }
+
+    th {
+      background: rgba(30, 41, 59, 0.75);
+      text-align: left;
+      color: #dbeafe;
+    }
+
+    td {
+      background: rgba(15, 23, 42, 0.55);
+    }
+
     .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .money-positive { color: #0b7a0b; font-weight: 600; }
-    .money-negative { color: #b42318; font-weight: 600; }
-    .money-zero { color: #667085; }
-    .friendly-state { margin: 0; color: #667085; font-style: italic; }
+    .money-positive { color: #22c55e; font-weight: 600; }
+    .money-negative { color: #f87171; font-weight: 600; }
+    .money-zero { color: #94a3b8; }
+    .friendly-state { margin: 0; color: #94a3b8; font-style: italic; }
+    #sessionInfo { color: #bfdbfe; }
   </style>
 </head>
 <body>
@@ -224,7 +335,6 @@ async function refreshHistory() {
       <tr>
         <td>${escapeHtml(player)}</td>
         <td class="num ${moneyClass(value)}">${formatRub(value)}</td>
-        <td class="num">${Number(value || 0)}</td>
       </tr>
     `).join("");
 
@@ -251,7 +361,6 @@ async function refreshHistory() {
           <tr>
             <th>Игрок</th>
             <th>Баланс (₽)</th>
-            <th>Баланс (коп)</th>
           </tr>
         </thead>
         <tbody>${balanceRows}</tbody>
