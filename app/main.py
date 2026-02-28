@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI, HTTPException
+from fastapi import File, UploadFile
 from pydantic import BaseModel, Field
 
 from app.api.speech_schemas import SpeechInterpretRequest, SpeechInterpretResponse
@@ -24,6 +27,9 @@ repo = LottoRepository()
 service = LottoService(repo)
 command_parser = CommandParser()
 app = FastAPI(title="Lotto Game API")
+
+ALLOWED_AUDIO_TYPES = {"audio/webm", "audio/wav", "audio/mpeg"}
+MAX_AUDIO_FILE_SIZE_BYTES = int(os.getenv("MAX_AUDIO_FILE_SIZE_BYTES", str(10 * 1024 * 1024)))
 
 
 @app.post("/games")
