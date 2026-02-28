@@ -6,13 +6,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi import File, UploadFile
 from pydantic import BaseModel, Field
 
+from app.api.speech_schemas import SpeechInterpretRequest, SpeechInterpretResponse
 from app.domain import DomainValidationError, GameEvent, GameEventType
 from app.repository import LottoRepository
-from app.services.transcription_service import (
-    TranscriptionConfigError,
-    TranscriptionProviderError,
-    transcribe_audio,
-)
+from app.services.command_parser import CommandParser, EventType, ParseStatus
 from app.service import LottoService
 
 
@@ -28,6 +25,7 @@ class EventRequest(BaseModel):
 
 repo = LottoRepository()
 service = LottoService(repo)
+command_parser = CommandParser()
 app = FastAPI(title="Lotto Game API")
 
 ALLOWED_AUDIO_TYPES = {"audio/webm", "audio/wav", "audio/mpeg"}
@@ -84,35 +82,33 @@ def stats() -> dict[str, object]:
     return service.get_stats()
 
 
-@app.post("/speech/transcribe")
-async def speech_transcribe(file: UploadFile = File(...)) -> dict[str, object]:
-    if file.content_type not in ALLOWED_AUDIO_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported MIME type '{file.content_type}'. Allowed: {', '.join(sorted(ALLOWED_AUDIO_TYPES))}",
-        )
+@app.post("/speech/interpret", response_model=SpeechInterpretResponse)
+def interpret_speech_command(payload: SpeechInterpretRequest) -> SpeechInterpretResponse:
+    result = command_parser.parse_whisper_output(payload.text, payload.players)
 
-    payload = await file.read()
-    if len(payload) > MAX_AUDIO_FILE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File is too large. Max size is {MAX_AUDIO_FILE_SIZE_BYTES} bytes.",
-        )
-
-    try:
-        result = transcribe_audio(
-            filename=file.filename or "audio",
-            content_type=file.content_type,
-            data=payload,
-        )
-    except TranscriptionConfigError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except TranscriptionProviderError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-
-    return {
-        "text": result.text,
-        "language": result.language,
-        "duration_seconds": result.duration_seconds,
-        "provider": result.provider,
+    intent_map = {
+        EventType.CLOSE_LINE: "close_line",
+        EventType.CLOSE_CARD: "close_card",
     }
+    endpoint_map = {
+        EventType.CLOSE_LINE: "/games/{game_id}/events/line",
+        EventType.CLOSE_CARD: "/games/{game_id}/events/card",
+    }
+
+    errors: list[str] = []
+    if result.status is not ParseStatus.OK:
+        if result.error:
+            errors.append(result.error)
+        if result.candidates:
+            options = ", ".join(candidate["player_name"] for candidate in result.candidates)
+            errors.append(f"Возможные игроки: {options}")
+
+    return SpeechInterpretResponse(
+        raw_text=result.raw_text or payload.text,
+        normalized_text=result.normalized_text or "",
+        intent=intent_map.get(result.event_type, "unknown"),
+        confidence=result.confidence,
+        player_id=result.player_name,
+        event_endpoint=endpoint_map.get(result.event_type),
+        errors=errors,
+    )

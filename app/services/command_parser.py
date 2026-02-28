@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from enum import Enum
 from typing import Iterable
-
-from rapidfuzz import fuzz, process
 
 
 class ParseStatus(str, Enum):
@@ -104,6 +103,16 @@ class CommandParser:
             normalized_text=normalized_text,
         )
 
+    def parse_whisper_output(self, payload: str | dict, players: Iterable[str]) -> ParseResult:
+        """Parse plain text or Whisper-like payloads containing transcript text."""
+        if isinstance(payload, str):
+            raw_text = payload
+        elif isinstance(payload, dict):
+            raw_text = str(payload.get("text") or payload.get("transcript") or "")
+        else:
+            raw_text = ""
+        return self.parse(text=raw_text, players=players)
+
     def _extract_command(self, normalized_text: str) -> tuple[EventType, str] | None:
         for event_type, pattern in self._COMMAND_PATTERNS:
             matched = pattern.match(normalized_text)
@@ -125,12 +134,7 @@ class CommandParser:
             normalized_to_original[normalize_text(player)] = player
 
         normalized_players = list(normalized_to_original.keys())
-        matches = process.extract(
-            requested_name,
-            normalized_players,
-            scorer=fuzz.WRatio,
-            limit=self.config.max_ambiguous_candidates,
-        )
+        matches = self._extract_matches(requested_name, normalized_players)
 
         if not matches:
             return {
@@ -138,7 +142,7 @@ class CommandParser:
                 "error": "Игрок не найден",
             }
 
-        best_name, best_score, _ = matches[0]
+        best_name, best_score = matches[0]
 
         if best_score < self.config.confidence_threshold:
             return {
@@ -149,7 +153,7 @@ class CommandParser:
 
         ambiguous_candidates = [
             (name, score)
-            for name, score, _ in matches
+            for name, score in matches
             if score >= self.config.confidence_threshold
             and (best_score - score) <= self.config.ambiguity_delta
         ]
@@ -173,14 +177,22 @@ class CommandParser:
             "confidence": float(best_score),
         }
 
+    def _extract_matches(self, requested_name: str, normalized_players: list[str]) -> list[tuple[str, int]]:
+        scored = [
+            (name, int(SequenceMatcher(None, requested_name, name).ratio() * 100))
+            for name in normalized_players
+        ]
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return scored[: self.config.max_ambiguous_candidates]
+
     def _build_candidates(
         self,
-        matches: list[tuple[str, float, int]],
+        matches: list[tuple[str, int]],
         normalized_to_original: dict[str, str],
     ) -> list[dict[str, float | str]]:
         return [
             {"player_name": normalized_to_original[name], "confidence": float(score)}
-            for name, score, _ in matches
+            for name, score in matches
         ]
 
 
