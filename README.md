@@ -2,6 +2,14 @@
 
 Простой backend на **Python 3.11 + FastAPI** для учета денежных расчетов в лото.
 
+## Архитектура API
+
+Целевая архитектура — **модульные роутеры** (`app/api/*`) с подключением в `app/main.py` через `app.include_router(...)`:
+
+- `app/api/games.py` — игровой lifecycle и settlement.
+- `app/api/stats.py` — агрегаты по завершенным играм.
+- `app/api/speech.py` — voice-команды (`interpret`) и транскрибация (`transcribe`).
+
 ## Что уже реализовано
 
 - Создание партии с параметрами:
@@ -41,32 +49,51 @@ uvicorn app.main:app --reload
 
 API будет доступно на `http://127.0.0.1:8000`, Swagger — `/docs`, UI сессии — `/`.
 
-## Основные endpoints
+## Финальный набор endpoints
 
-- `POST /games` — создать игру
-- `POST /games/{id}/events/line` — добавить закрытие линии
-- `POST /games/{id}/events/card` — добавить закрытие карты
-- `POST /games/{id}/finish` — завершить игру и зафиксировать результат
-- `GET /games/{id}/settlement` — получить расчет завершенной игры
-- `GET /stats/balance` — общий баланс по всем завершенным играм
-- `POST /speech/transcribe` — принять аудио (`multipart/form-data`) и вернуть JSON с `text`, `language`, `provider`
+### Games
 
-### Endpoints сессий (новые)
+- `POST /games`
+- `POST /games/{game_id}/events/line`
+- `POST /games/{game_id}/events/card`
+- `POST /games/{game_id}/finish`
+- `GET /games/{game_id}/settlement`
 
-- `POST /sessions` — создать сессию
-- `POST /sessions/{id}/line` — выбрать победителей по линии для активной игры
-- `POST /sessions/{id}/card` — выбрать победителей по карте для активной игры
-- `POST /sessions/{id}/finish` — завершить активную игру и сохранить в историю
-- `POST /sessions/{id}/new-game` — начать новую игру в той же сессии
-- `GET /sessions/{id}` — получить состояние сессии и историю
+### Stats
+
+- `GET /stats/balance`
+- `GET /stats/player/{name}`
+
+### Speech
+
+- `POST /speech/interpret`
+- `POST /speech/transcribe`
+
+### Sessions (UI support)
+
+- `POST /sessions`
+- `POST /sessions/{session_id}/line`
+- `POST /sessions/{session_id}/card`
+- `POST /sessions/{session_id}/finish`
+- `POST /sessions/{session_id}/new-game`
+- `GET /sessions/{session_id}`
+
+## Ошибки API
+
+Для `games`, `stats`, `speech` используется единый формат ошибок:
+
+```json
+{
+  "detail": {
+    "code": "error_code",
+    "message": "Human readable message",
+    "details": {}
+  }
+}
+```
 
 ## Тесты
 
 ```bash
 pytest
 ```
-
-## Frontend
-
-В репозитории добавлен `frontend/` с демо-записью аудио через `MediaRecorder` и отправкой данных в `POST /speech/transcribe`.
-
