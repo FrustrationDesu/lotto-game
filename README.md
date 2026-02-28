@@ -2,34 +2,21 @@
 
 Простой backend на **Python 3.11 + FastAPI** для учета денежных расчетов в лото.
 
-## Архитектура API
+## Что реализовано
 
-Целевая архитектура — **модульные роутеры** (`app/api/*`) с подключением в `app/main.py` через `app.include_router(...)`:
-
-- `app/api/games.py` — игровой lifecycle и settlement.
-- `app/api/stats.py` — агрегаты по завершенным играм.
-- `app/api/speech.py` — voice-команды (`interpret`) и транскрибация (`transcribe`).
-
-## Что уже реализовано
-
-- Создание партии с параметрами:
-  - цена карточки (`card_price_kopecks`)
-  - доплата за линию (`line_bonus_kopecks`)
-- События партии:
-  - закрытие линии (может быть несколько победителей за событие)
-  - закрытие карты (может быть несколько победителей)
-- Ограничение: один и тот же игрок может закрыть линию только один раз за партию.
-- Завершение партии с расчетом:
-  - чистого баланса (`net`) по каждому игроку
-  - списка переводов «кто кому должен» (`transfers`)
-- Межпартийная статистика:
-  - общий накопительный баланс по игрокам
-  - количество завершенных партий
-- Легкий фронт для сессий игр:
+- Игровой API:
+  - создание партии с параметрами (`card_price_kopecks`, `line_bonus_kopecks`)
+  - фиксация событий по линии и карте (поддерживаются несколько победителей)
+  - ограничение: один и тот же игрок может закрыть линию только один раз за партию
+  - завершение партии с расчетом `net` и переводов `transfers`
+  - межпартийная статистика по завершенным играм
+- Session API:
   - создание сессии
-  - шаг «Кто закрыл линию?»
-  - шаг «Кто закрыл карту?»
-  - история игр в рамках одной сессии
+  - пошаговое заполнение победителей (line/card)
+  - завершение игры в сессии
+  - история игр и старт новой игры в рамках одной сессии
+- Встроенный UI для сессий (inline HTML в `app/main.py`, маршрут `/`).
+- Отдельный `frontend/` — **демо-клиент** для записи/отправки аудио в speech-эндпоинт (не является основным игровым UI).
 
 ## Правила расчета
 
@@ -47,49 +34,52 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-API будет доступно на `http://127.0.0.1:8000`, Swagger — `/docs`, UI сессии — `/`.
+API будет доступно на `http://127.0.0.1:8000`, Swagger — `/docs`, основной UI сессии — `/`.
 
-## Финальный набор endpoints
+## Endpoints
 
-### Games
+### Таблица соответствия endpoint → статус реализации
 
-- `POST /games`
-- `POST /games/{game_id}/events/line`
-- `POST /games/{game_id}/events/card`
-- `POST /games/{game_id}/finish`
-- `GET /games/{game_id}/settlement`
+| Endpoint | Метод | Статус | Примечание |
+|---|---|---|---|
+| `/` | GET | ✅ Реализован | Основной inline UI сессий из `app/main.py` |
+| `/games` | POST | ✅ Реализован | Создание игры |
+| `/games/{game_id}/events/line` | POST | ✅ Реализован | Добавление победителей линии |
+| `/games/{game_id}/events/card` | POST | ✅ Реализован | Добавление победителей карты |
+| `/games/{game_id}/finish` | POST | ✅ Реализован | Завершение игры и расчет |
+| `/games/{game_id}/settlement` | GET | ✅ Реализован | Получение расчета завершенной игры |
+| `/stats/balance` | GET | ✅ Реализован | Общий баланс по завершенным играм |
+| `/sessions` | POST | ✅ Реализован | Создание сессии |
+| `/sessions/{session_id}/line` | POST | ✅ Реализован | Установка победителей линии в активной игре |
+| `/sessions/{session_id}/card` | POST | ✅ Реализован | Установка победителей карты в активной игре |
+| `/sessions/{session_id}/finish` | POST | ✅ Реализован | Завершение активной игры сессии |
+| `/sessions/{session_id}/new-game` | POST | ✅ Реализован | Новая игра в текущей сессии |
+| `/sessions/{session_id}` | GET | ✅ Реализован | Состояние сессии и история |
+| `/speech/transcribe` | POST | ❌ Не реализован в `app/main.py` | Endpoint упоминается в тестах/документации, но не объявлен в текущем FastAPI-приложении |
+| `/speech/interpret` | POST | ❌ Не реализован в `app/main.py` | Endpoint упоминается в тестах, но не объявлен в текущем FastAPI-приложении |
 
-### Stats
+## Frontend
 
-- `GET /stats/balance`
-- `GET /stats/player/{name}`
+Основным frontend в текущем приложении является **inline UI в `app/main.py`** (маршрут `/`).
 
-### Speech
+Папка `frontend/` содержит отдельное демо-приложение для сценариев speech (запись через `MediaRecorder` и отправка аудио), но не является основным интерфейсом для игрового потока сессий.
 
-- `POST /speech/interpret`
-- `POST /speech/transcribe`
+## Speech provider env vars
 
-### Sessions (UI support)
+Для OpenAI-провайдера транскрибации используются переменные окружения:
 
-- `POST /sessions`
-- `POST /sessions/{session_id}/line`
-- `POST /sessions/{session_id}/card`
-- `POST /sessions/{session_id}/finish`
-- `POST /sessions/{session_id}/new-game`
-- `GET /sessions/{session_id}`
+- `TRANSCRIPTION_PROVIDER` — провайдер транскрибации (текущее поддерживаемое значение: `openai`).
+- `OPENAI_API_KEY` — API-ключ.
+- `OPENAI_BASE_URL` — базовый URL API (по умолчанию `https://api.openai.com/v1`).
+- `OPENAI_WHISPER_MODEL` — модель транскрибации (по умолчанию `whisper-1`).
 
-## Ошибки API
+Пример:
 
-Для `games`, `stats`, `speech` используется единый формат ошибок:
-
-```json
-{
-  "detail": {
-    "code": "error_code",
-    "message": "Human readable message",
-    "details": {}
-  }
-}
+```bash
+export TRANSCRIPTION_PROVIDER=openai
+export OPENAI_API_KEY=your_key
+export OPENAI_BASE_URL=https://api.openai.com/v1
+export OPENAI_WHISPER_MODEL=whisper-1
 ```
 
 ## Тесты
@@ -97,3 +87,5 @@ API будет доступно на `http://127.0.0.1:8000`, Swagger — `/docs
 ```bash
 pytest
 ```
+
+Примечание: часть тестов в репозитории ожидает наличие speech-endpoints (`/speech/transcribe`, `/speech/interpret`), которые в текущем `app/main.py` не зарегистрированы.
