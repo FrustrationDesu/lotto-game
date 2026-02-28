@@ -44,6 +44,7 @@ API будет доступно на `http://127.0.0.1:8000`, Swagger — `/docs
 - `POST /games/{id}/finish` — завершить игру и зафиксировать результат
 - `GET /games/{id}/settlement` — получить расчет завершенной игры
 - `GET /stats/balance` — общий баланс по всем завершенным играм
+- `POST /speech/transcribe` — принять аудио (`multipart/form-data`) и вернуть JSON с `text`, `language`, `provider`
 
 ## Пример сценария
 
@@ -58,3 +59,8 @@ API будет доступно на `http://127.0.0.1:8000`, Swagger — `/docs
 ```bash
 pytest
 ```
+
+## Frontend
+
+В репозитории добавлен `frontend/` с демо-записью аудио через `MediaRecorder` и отправкой данных в `POST /speech/transcribe`.
+

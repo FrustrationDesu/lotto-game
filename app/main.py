@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.domain import DomainValidationError, GameEvent, GameEventType
@@ -18,9 +19,23 @@ class EventRequest(BaseModel):
     players: list[str] = Field(min_length=1)
 
 
+class SpeechTranscribeResponse(BaseModel):
+    text: str
+    language: str
+    provider: str
+
+
 repo = LottoRepository()
 service = LottoService(repo)
 app = FastAPI(title="Lotto Game API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.post("/games")
@@ -71,3 +86,19 @@ def settlement(game_id: int) -> dict[str, object]:
 @app.get("/stats/balance")
 def stats() -> dict[str, object]:
     return service.get_stats()
+
+
+@app.post("/speech/transcribe", response_model=SpeechTranscribeResponse)
+async def speech_transcribe(file: UploadFile = File(...)) -> SpeechTranscribeResponse:
+    if file.content_type not in {"audio/webm", "audio/webm;codecs=opus", "application/octet-stream"}:
+        raise HTTPException(status_code=400, detail="Unsupported audio format")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio payload")
+
+    return SpeechTranscribeResponse(
+        text="Тестовая расшифровка получена",
+        language="ru",
+        provider="mock-media-recorder",
+    )
