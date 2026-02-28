@@ -9,7 +9,7 @@ from app.domain import (
     calculate_net,
     unique_preserve_order,
 )
-from app.repository import LottoRepository
+from app.storage.repository import LottoRepository
 
 
 class LottoService:
@@ -30,12 +30,12 @@ class LottoService:
         if game.finished_at is not None:
             raise DomainValidationError("game already finished")
 
-        winners = unique_preserve_order(event.players)
+        winners = unique_preserve_order(event.player_ids)
         for winner in winners:
             if winner not in game.players:
                 raise DomainValidationError(f"unknown player: {winner}")
 
-        if event.type == GameEventType.LINE_CLOSED:
+        if event.event_type == GameEventType.LINE_CLOSED:
             duplicates = set(winners) & set(game.line_winners)
             if duplicates:
                 raise DomainValidationError(
@@ -48,7 +48,7 @@ class LottoService:
                     f"card already closed by: {', '.join(sorted(duplicates))}"
                 )
 
-        self.repo.append_winners(game_id, event.type, winners)
+        self.repo.append_winners(game_id, event.event_type, winners)
 
     def finish_game(self, game_id: int) -> dict[str, object]:
         game = self.repo.get_game(game_id)
@@ -86,7 +86,20 @@ class LottoService:
         return {"game_id": game_id, "net": result, "transfers": build_transfers(result)}
 
     def get_stats(self) -> dict[str, object]:
+        games_count = self.repo.get_games_count()
+        global_balance = self.repo.get_global_balance()
+        total_balance = sum(global_balance.values())
         return {
-            "games_finished": self.repo.get_games_count(),
-            "global_balance": self.repo.get_global_balance(),
+            "games_finished": games_count,
+            "global_balance": global_balance,
+            "games_count": games_count,
+            "total_balance": total_balance,
+            "average_per_game": (total_balance / games_count) if games_count else 0.0,
+            "players": [
+                {"name": name, "net": net}
+                for name, net in sorted(global_balance.items())
+            ],
         }
+
+    def get_player_stats(self, name: str) -> dict[str, object]:
+        return self.repo.get_player_stats(name)

@@ -13,6 +13,8 @@ class Game(Base):
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    card_price_kopecks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    line_bonus_kopecks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     players: Mapped[list["GamePlayer"]] = relationship(back_populates="game", cascade="all, delete-orphan")
     events: Mapped[list["GameEvent"]] = relationship(back_populates="game", cascade="all, delete-orphan")

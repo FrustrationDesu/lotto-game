@@ -8,9 +8,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from app.api.speech import router as speech_router
 from app.domain import DomainValidationError, GameEvent, GameEventType, GameSettings, build_transfers, calculate_net
-from app.repository import LottoRepository
+from app.storage.database import Base, engine, SessionLocal
+from app.storage.repository import LottoRepository
 from app.services.command_parser import CommandParser, EventType, ParseStatus
+from app.services.transcription_service import transcribe_audio
 from app.service import LottoService
 
 
@@ -34,13 +37,14 @@ class SessionWinnersRequest(BaseModel):
     players: list[str] = Field(min_length=1)
 
 
-repo = LottoRepository()
+Base.metadata.create_all(bind=engine)
+repo = LottoRepository(SessionLocal)
 service = LottoService(repo)
 command_parser = CommandParser()
 app = FastAPI(title="Lotto Game API")
+app.include_router(speech_router)
 
 session_counter = count(1)
-game_counter = count(1)
 SESSIONS: dict[int, dict[str, Any]] = {}
 
 
@@ -191,7 +195,7 @@ def start_game(payload: StartGameRequest) -> dict[str, int]:
 @app.post("/games/{game_id}/events/line")
 def add_line_event(game_id: int, payload: EventRequest) -> dict[str, str]:
     try:
-        service.add_event(game_id, GameEvent(type=GameEventType.LINE_CLOSED, players=tuple(payload.players)))
+        service.add_event(game_id, GameEvent(event_type=GameEventType.LINE_CLOSED, player_ids=tuple(payload.players)))
     except DomainValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -200,7 +204,7 @@ def add_line_event(game_id: int, payload: EventRequest) -> dict[str, str]:
 @app.post("/games/{game_id}/events/card")
 def add_card_event(game_id: int, payload: EventRequest) -> dict[str, str]:
     try:
-        service.add_event(game_id, GameEvent(type=GameEventType.CARD_CLOSED, players=tuple(payload.players)))
+        service.add_event(game_id, GameEvent(event_type=GameEventType.CARD_CLOSED, player_ids=tuple(payload.players)))
     except DomainValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "ok"}
@@ -225,6 +229,13 @@ def settlement(game_id: int) -> dict[str, object]:
 @app.get("/stats/balance")
 def stats() -> dict[str, object]:
     return service.get_stats()
+
+
+
+
+@app.get("/stats/player/{name}")
+def player_stats(name: str) -> dict[str, object]:
+    return service.get_player_stats(name)
 
 
 @app.post("/sessions")
